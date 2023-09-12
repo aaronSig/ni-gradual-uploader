@@ -88,26 +88,43 @@ const someCSS = `
 }
 `;
 
+// Add the css to the page
+let style = document.createElement("style");
+style.innerHTML = someCSS;
+document.head.appendChild(style);
+
 // Code to only change the upload form....
-if (checkIfOnPage()) {
+let route = getRoute();
+if (route) {
   resetLocalStorage();
-  setTimeout(addForm, 1000);
+  setTimeout(route, 1000);
 }
 
 let lastPage = window.location.hash;
 window.addEventListener("click", function (e) {
   if (lastPage !== window.location.hash) {
     lastPage = window.location.hash;
-    if (checkIfOnPage()) {
-      addForm();
+    route = getRoute();
+    if (route) {
+      route();
     } else {
       cleanup();
     }
   }
 });
 
-function checkIfOnPage() {
-  return window.location.hash === "#/movements/ela/moves-out-market";
+function getRoute() {
+  let routes = {
+    "#/movements/ela/moves-out-market": addForm,
+    "#/movements/ela/document-request-confirmation": confirmationDownloadButton,
+  };
+
+  let route = routes[window.location.hash];
+  if (route) {
+    return route;
+  }
+
+  return false;
 }
 
 let docRowTemplate = `
@@ -127,9 +144,7 @@ let docRowTemplate = `
 let template = `
  <div style="position: fixed; bottom:0px; right: 24px; width: 320px; height: 300px; background-color: white; border: 1px solid #eee; box-shadow: 2px -2px rgba(0,0,0,0.1);">
 
-    <style>
-     ${someCSS}
-    </style>
+
 
      <div style="background-color: green; padding: 12px 24px; color: white; user-select: none;">
          <h3 class="panel-title">Gradually Upload A File</h3>
@@ -601,4 +616,120 @@ function resetLocalStorage() {
       localStorage.removeItem(key);
     }
   }
+}
+
+// Document Request Confirmaiton Page
+function confirmationDownloadButton() {
+  // the download button doesn't work. We can construct the XML locally so replace the button with
+  // one that does that
+
+  let confirmationMessageNode = document.querySelectorAll(
+    "p[data-cy='confirmationDetails']"
+  );
+
+  // check confirmationMessage exists
+  if (confirmationMessageNode.length === 0) {
+    console.log("No confirmation message found");
+    return;
+  }
+
+  // Add a button next to the existing one
+  let existingButton = document.querySelectorAll(
+    "button[data-cy='downloadXmlBtn']"
+  )[0];
+
+  let newButton = document.createElement("button");
+  // <button class="button-3 small" role="button" id="override-download-button">Actually Download XML</button>
+  newButton.className = "button-3 small pull-right";
+  newButton.setAttribute("role", "button");
+  newButton.setAttribute("id", "override-download-button");
+  newButton.textContent = "Download XML";
+
+  let clone = existingButton.parentNode.cloneNode(true);
+  clone.querySelector("button").remove();
+  clone.appendChild(newButton);
+
+  existingButton.parentNode.parentNode.appendChild(clone);
+
+  newButton.addEventListener("click", function (e) {
+    let now = new Date();
+    // DD/MM/YYYY
+    let requestDate = `${now.getDate().toString().padStart(2, "0")}/${(
+      now.getMonth() + 1
+    )
+      .toString()
+      .padStart(2, "0")}/${now.getFullYear()}`;
+
+    let marketNumber = document
+      .querySelectorAll("p[data-cy='confirmationDetails']")[0]
+      .textContent.split(":")[1]
+      .trim();
+
+    let docNumberRange = document
+      .querySelectorAll("p[data-cy='confirmationDetails']")[0]
+      .nextElementSibling.textContent.split("-");
+    let rangeStart = docNumberRange[0].trim();
+    let rangeEnd = docNumberRange[1].trim();
+
+    if (docNumberRange.length !== 2) {
+      console.log("Couldn't find document number range");
+      return;
+    }
+
+    // `<VMLMessage Type="DOCUMENT-ALLOCATION-RESULTS">
+    //     <uploadFileName>M03FCCCCCCCC_documentAllocation.xml</uploadFileName>
+    //     <allocation>
+    //       <requestDate>08/05/2023</requestDate>
+    //       <startDocument>M00XXXXXXX</startDocument>
+    //       <endDocument>M00XXXXXXX</endDocument>
+    //     </allocation>
+    //   </VMLMessage>`
+
+    // Create the xml
+    let doc = document.implementation.createDocument("", "", null);
+    let newVMLMessage = doc.createElement("VMLMessage");
+    newVMLMessage.setAttribute("Type", "DOCUMENT-ALLOCATION-RESULTS");
+
+    let uploadFileName = doc.createElement("uploadFileName");
+    let fileNameSafeDate = requestDate.replace(/\//g, "");
+
+    uploadFileName.appendChild(
+      doc.createTextNode(
+        `${marketNumber}${fileNameSafeDate}_documentAllocation.xml`
+      )
+    );
+
+    let allocation = doc.createElement("allocation");
+    let newRequestDate = doc.createElement("requestDate");
+    newRequestDate.appendChild(doc.createTextNode(requestDate));
+
+    let newStartDocument = doc.createElement("startDocument");
+    newStartDocument.appendChild(doc.createTextNode(rangeStart));
+
+    let newEndDocument = doc.createElement("endDocument");
+    newEndDocument.appendChild(doc.createTextNode(rangeEnd));
+
+    allocation.appendChild(newRequestDate);
+    allocation.appendChild(newStartDocument);
+    allocation.appendChild(newEndDocument);
+
+    newVMLMessage.appendChild(uploadFileName);
+    newVMLMessage.appendChild(allocation);
+
+    doc.appendChild(newVMLMessage);
+
+    let serializer = new XMLSerializer();
+
+    let xmlStr = serializer.serializeToString(doc);
+
+    let blob = new Blob([xmlStr], { type: "text/xml" });
+    let url = URL.createObjectURL(blob);
+
+    let a = document.createElement("a");
+    a.href = url;
+
+    let filename = `${marketNumber}${fileNameSafeDate}_documentAllocation.xml`;
+    a.download = filename;
+    a.click();
+  });
 }

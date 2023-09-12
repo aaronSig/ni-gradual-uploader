@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "NI Gradual Uploader",
   "description": "A way to gradually upload a large number of movements to NIFAIS and avoid the timeouts.",
-  "version": "1.0",
+  "version": "1.3",
   "icons": {
     "128": "128.png"
   },
